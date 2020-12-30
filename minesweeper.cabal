@@ -27,7 +27,7 @@ source-repository head
 
 library
   exposed-modules:
-      Lib, Minesweeper
+      Lib, Minesweeper, AIPlayer
   other-modules:
       Paths_minesweeper
   hs-source-dirs:
@@ -49,6 +49,10 @@ executable minesweeper
       base >=4.7 && <5
     , minesweeper
     , threepenny-gui
+    , random
+    , mtl
+    , time
+    , old-locale
   default-language: Haskell2010
 
 test-suite minesweeper-test
