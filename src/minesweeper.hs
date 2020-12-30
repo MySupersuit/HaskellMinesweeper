@@ -1,6 +1,13 @@
 module Minesweeper 
     ( ApparentGrid
+    , ActualGrid
     , Coord
+    , initGame
+    , handleInput2
+    , checkEndgame
+    , getNumFlags
+    , getNumMines
+    , flagAllUnmarked
     )
 where
 
@@ -19,9 +26,7 @@ data Space = Open | Close | Flag
 
 type ActualGrid = [[Int]]
 type ApparentGrid = [[Int]]
--- 0 = unopened
--- 1 = opened
--- 2 = flagged?
+
 
 type Coord = (Int, Int)
 
@@ -57,6 +62,19 @@ getNumAdjMines :: ActualGrid -> Coord -> Int
 getNumAdjMines grid c
     | c @!! grid == -1 = -1
     | otherwise = numAdjMines grid c
+
+numAdjFlags :: ApparentGrid -> Coord -> Int
+numAdjFlags grid (i,j) = 
+    let conv = [(i1,j1) | i1 <- (oneAboveBelow i $ height grid),
+                          j1 <- (oneAboveBelow j $ width grid)]
+    in sumOfFlags (deleteFirstFromList (i,j) conv) grid
+
+sumOfFlags :: [Coord] -> ApparentGrid -> Int
+sumOfFlags [] grid = 0
+sumOfFlags (c:cs) grid = 
+    case c@!! grid of
+        10 -> 1 + sumOfFlags cs grid
+        _ -> sumOfFlags cs grid
 
 
 insertAdjMines :: ActualGrid -> ActualGrid
@@ -126,8 +144,8 @@ randomCoords cs w h num g =
 
 
 -- for generating random starting positions each time
-timeInt :: IO Int
-timeInt = round . (1000 *) <$> getPOSIXTime
+-- timeInt :: IO Int
+-- timeInt = round . (1000 *) <$> getPOSIXTime
 
 prettyPrint [] = return ()
 prettyPrint (g:gs) = do
@@ -158,6 +176,7 @@ openSquare apGrid acGrid c =
 
 updateOpenSquare :: ApparentGrid -> ActualGrid -> Coord -> Coord -> Int
 updateOpenSquare apGrid acGrid c opened
+    | c == opened && (c @!! apGrid == 10) = c @!! apGrid
     | c == opened = c @!! acGrid
     | otherwise = c @!! apGrid
 
@@ -166,11 +185,24 @@ flagSquare apGrid c =
     let h = height apGrid
         w = width apGrid
     in [[ updateFlagSquare apGrid (i,j) c | j <- [0..(w-1)]]
-                                          | i<- [0..(h-1)]]
+                                          | i <- [0..(h-1)]]
+
+flagAllUnmarked :: ApparentGrid -> ApparentGrid
+flagAllUnmarked apGrid = 
+    let h = height apGrid
+        w = width apGrid
+    in [[unmarkedToFlag apGrid (i,j) | j <- [0..(w-1)]] 
+                                     | i <- [0..(h-1)]]
+
+unmarkedToFlag :: ApparentGrid -> Coord -> Int
+unmarkedToFlag grid c
+    | c @!! grid == 9 = 10
+    | otherwise = c @!! grid
 
 updateFlagSquare :: ApparentGrid -> Coord -> Coord -> Int
 updateFlagSquare apGrid c flagged
-    | c == flagged = 10
+    | (c @!! apGrid == 10) && c == flagged = 9
+    | (c @!! apGrid == 9) && c == flagged = 10
     | otherwise = c @!! apGrid
 
 openZero :: ApparentGrid -> ActualGrid -> Coord -> ApparentGrid
@@ -202,11 +234,27 @@ handleInput apGrid acGrid input = do
             else
                 openSquare apGrid acGrid coord
 
-checkEndgame :: ApparentGrid -> ActualGrid -> Bool
+handleInput2 :: ApparentGrid -> ActualGrid -> Coord -> String -> ApparentGrid
+handleInput2 apGrid acGrid coord instr = do
+    case instr of
+        "F" -> flagSquare apGrid coord
+        _ -> do
+            if coord @!! acGrid == (-1) then
+                openSquare apGrid acGrid coord
+            else 
+                if (numAdjFlags apGrid coord) == (numAdjMines acGrid coord) then
+                    openZero apGrid acGrid coord
+                else
+                    openSquare apGrid acGrid coord
+
+
+-- change to String output
+-- win lose playing
+checkEndgame :: ApparentGrid -> ActualGrid -> String
 checkEndgame apGrid acGrid
-    | checkMineTrip apGrid = True
-    | checkWin apGrid acGrid = True
-    | otherwise = False
+    | checkMineTrip apGrid = "L"
+    | checkWin apGrid acGrid = "W"
+    | otherwise = "P"
     -- let h = height apGrid
     --     w = width apGrid
     -- in [[ checkEndSquare apGrid (i,j) c | j <- [0..(w-1)]]
@@ -228,21 +276,21 @@ getNumHiddenSquares grid =
     let cat = concat grid
     in length $ filter (\x -> x==9 || x==10) cat
 
-userInput :: ActualGrid -> ActualGrid -> IO ()
-userInput apGrid acGrid = do
-    putStrLn ""
-    prettyPrint acGrid
-    putStrLn ""
-    prettyPrint apGrid
-    apparentPrint apGrid
+-- userInput :: ActualGrid -> ActualGrid -> IO ()
+-- userInput apGrid acGrid = do
+--     putStrLn ""
+--     prettyPrint acGrid
+--     putStrLn ""
+--     prettyPrint apGrid
+--     apparentPrint apGrid
 
-    if checkEndgame apGrid acGrid then do
-        putStrLn "GAME OVER!"
-    else do
-        line <- getLine
-        let newGrid = handleInput apGrid acGrid line
+--     if checkEndgame apGrid acGrid then do
+--         putStrLn "GAME OVER!"
+--     else do
+--         line <- getLine
+--         let newGrid = handleInput apGrid acGrid line
 
-        userInput newGrid acGrid
+--         userInput newGrid acGrid
 
 getSurroundCoords :: ActualGrid -> Coord -> [Coord]
 getSurroundCoords grid c = [(i,j) | i <- (oneAboveBelow (fst c) (height grid)),
@@ -290,18 +338,32 @@ getNumMines grid =
     let cat = concat grid
     in length $ filter (==(-1)) cat
 
+getNumFlags :: ApparentGrid -> Int
+getNumFlags grid = 
+    let cat = concat grid
+    in length $ filter (==10) cat
+
 -- from webpage -> send coordinates which are input coordinates
 -- left click = uncover
 -- right click = flag
 -- button to reset
 
-main :: IO ()
-main = do
-    time <- timeInt  
-    let (mineCoords,g) = randomCoords [] 9 9 2 (mkStdGen time)
-
+initGame :: Int -> (ApparentGrid, ActualGrid, StdGen)
+initGame g = do
+    -- let (mineCoords,g) = randomCoords [] 9 9 10 (mkStdGen time)
+    let (mineCoords,g1) = randomCoords [] 9 9 10 (mkStdGen g)
     let actualGrid = insertAdjMines $ createActualBoard mineCoords 9 9
     let appGrid = createApparentBoard 9 9
+    (appGrid, actualGrid, g1)
 
-    userInput appGrid actualGrid
+
+-- main :: IO ()
+-- main = do
+--     time <- timeInt  
+--     let (mineCoords,g) = randomCoords [] 9 9 2 (mkStdGen time)
+
+--     let actualGrid = insertAdjMines $ createActualBoard mineCoords 9 9
+--     let appGrid = createApparentBoard 9 9
+
+--     userInput appGrid actualGrid
     
