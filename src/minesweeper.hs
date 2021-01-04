@@ -18,6 +18,7 @@ module Minesweeper
     , openMultipleSquares
     , openZero
     , openedAdjCoords
+    , getMineCoords
     )
 where
 
@@ -278,6 +279,20 @@ openZero apGrid acGrid coord =
     in openMultipleSquares apGrid acGrid coords
     -- in do
     --     userInput newGrid acGrid
+
+getMineCoords :: ActualGrid -> [Coord]
+getMineCoords acGrid = 
+    let h = height acGrid
+        w = width acGrid
+        allCoords = [(i,j) | i <- [0..(w-1)],
+                             j <- [0..(h-1)]]
+    in getMines acGrid allCoords
+
+getMines :: ActualGrid -> [Coord] -> [Coord]
+getMines acGrid (c:cs) = filter (\n -> n @!! acGrid == -1) (c:cs) 
+    -- | c @!! acGrid == -1 = c : getMines acGrid cs
+    -- | otherwise = getMines acGrid cs
+
 
 handleInput :: ApparentGrid -> ActualGrid -> String -> ApparentGrid
 handleInput apGrid acGrid input = do
