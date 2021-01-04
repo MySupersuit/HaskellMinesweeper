@@ -8,28 +8,18 @@ import System.Random
 import Minesweeper
 import AIPlayer
 import Data.Time
--- import System.Locale
 import Control.Applicative
 import Data.Matrix
--- import Math.LinearEquationSolver
 
 import Data.IORef
 import Control.Monad.Trans (liftIO)
 
 -- TODO
 
--- reveal mines on loss
-
--- next level of non obvious moves - multisquare matrices
--- if grid == grid after obvious moves then try non obvious
--- firtly have to find area to analyse - borders of opened squares?
-
 -- Select difficulty levels
 --      #mines, board size 
 
--- AI - num unopened = num mines around ==> both mines
--- num marked mines = num mines then open the rest
--- Tank solver alg
+-- better AI
 
 -- setup
 canvasHeight :: Int
@@ -46,8 +36,9 @@ main = do
     -- init game in here giving an apparent board
     -- num <- randomIO :: IO Int
     -- new sequence of boards every time prog is LOADED (As it's in main)
+    
+    -- StdGen initialised with time so different each time game is executed
     epoch_int <- (read <$> formatTime defaultTimeLocale "%s" <$> getCurrentTime) :: IO Int
-    -- g <- mkStdGen num
     let boardstate = initGame epoch_int
     startGUI defaultConfig (setup boardstate)
 
@@ -61,7 +52,6 @@ setup (apparentGrid, actualGrid, g1) window = do
     mousePos <- liftIO $ newIORef (0,0)
     gameStatusRef <- liftIO $ newIORef "P"
     -- mineCountRef <- liftIO $ newIORef 9 -- num mines
-
 
     -- TODO: set width and height based on size of grid
     display <- UI.span # set text "empty" -- testing purposes
@@ -128,7 +118,6 @@ setup (apparentGrid, actualGrid, g1) window = do
 
         endGame newGrid acGrid canvas gameStatusRef mineCountDisp
 
-
     on UI.mousemove canvas $ \xy ->
         do liftIO $ writeIORef mousePos xy
 
@@ -159,11 +148,6 @@ setup (apparentGrid, actualGrid, g1) window = do
                 let newGrid = handleInput2 apGrid acGrid coord ""
                 liftIO $ writeIORef apGridRef newGrid
 
-                -- let (c,m) = markNonObvious newGrid
-                -- element display # set UI.text (show c)
-                -- element d2 # set UI.text (show m)
-                -- element d2 # set UI.text (show r)
-                
                 endGame newGrid acGrid canvas gameStatusRef mineCountDisp
 
     return ()
@@ -177,10 +161,18 @@ endGame apGrid acGrid canvas gameStatusRef mineCountDisp = do
         drawGame (concat finishGrid) 9 9 canvas 0 status gameStatusRef
         updateNumMines finishGrid acGrid mineCountDisp
         else do 
-            drawGame (concat apGrid) 9 9 canvas 0 status gameStatusRef
+            if status == "L" then do
+                let newGrid = revealMines apGrid acGrid
+                drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
+                else do
+                    drawGame (concat apGrid) 9 9 canvas 0 status gameStatusRef
 
+revealMines :: ApparentGrid -> ActualGrid -> ApparentGrid
+revealMines apGrid acGrid =
+    let mines = getMineCoords acGrid
+    in openMultipleSquares apGrid acGrid mines
 
--- updateNumMines :: ApparentGrid -> ActualGrid -> 
+updateNumMines :: ApparentGrid -> ActualGrid -> Element -> UI () 
 updateNumMines apGrid acGrid disp = do
     let numFlagged = getNumFlags apGrid
     let numMines = getNumMines acGrid
@@ -212,6 +204,7 @@ drawGame xs h w canvas index _ _ = do
 
     drawSquares xs h w canvas (index)
 
+drawLoss :: UI.Canvas -> UI ()
 drawLoss canvas = do
     canvas # set' UI.fillStyle (UI.htmlColor "red")
     canvas # set' UI.textAlign (UI.Center)
@@ -221,7 +214,7 @@ drawLoss canvas = do
         (fromIntegral $ canvasWidth `div` 2, 
             fromIntegral $ canvasHeight `div` 2)
     
-
+drawWin :: UI.Canvas -> UI ()
 drawWin canvas = do
     canvas # set' UI.fillStyle (UI.htmlColor "lime")
     canvas # set' UI.textAlign (UI.Center)
