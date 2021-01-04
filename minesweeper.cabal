@@ -36,6 +36,7 @@ library
       base >=4.7 && <5
       , time
       , random
+      , matrices
   default-language: Haskell2010
 
 executable minesweeper
@@ -53,6 +54,7 @@ executable minesweeper
     , mtl
     , time
     , old-locale
+    , matrices
   default-language: Haskell2010
 
 test-suite minesweeper-test

@@ -8,6 +8,16 @@ module Minesweeper
     , getNumFlags
     , getNumMines
     , flagAllUnmarked
+    , getNumUnopenedAdj
+    , unopenedAdjCoords
+    , flagMultiple
+    , height
+    , width
+    , (@!!)
+    , numAdjFlags
+    , openMultipleSquares
+    , openZero
+    , openedAdjCoords
     )
 where
 
@@ -22,11 +32,18 @@ import Control.Monad
 -- apparent grid values
 -- flagged positions
 
-data Space = Open | Close | Flag
+-------------------------------------
+-- apGrid
+-- - unopened = 9
+-- - flagged = 10
+-- - opened = 0-8 (num of mines adjacent)
+
+-- acGrid
+-- - -1 = mine
+-- - 0-8 = num of surrounding mines
 
 type ActualGrid = [[Int]]
 type ApparentGrid = [[Int]]
-
 
 type Coord = (Int, Int)
 
@@ -62,6 +79,44 @@ getNumAdjMines :: ActualGrid -> Coord -> Int
 getNumAdjMines grid c
     | c @!! grid == -1 = -1
     | otherwise = numAdjMines grid c
+
+getNumUnopenedAdj :: ApparentGrid -> Coord -> Int
+getNumUnopenedAdj grid (i,j) =
+    let conv = [(i1,j1) | i1 <- (oneAboveBelow i $ height grid),
+                          j1 <- (oneAboveBelow j $ width grid)]
+    in sumOfUnopened (deleteFirstFromList (i,j) conv) grid
+
+unopenedAdjCoords :: ApparentGrid -> Coord -> [Coord]
+unopenedAdjCoords grid (i,j) =
+    let conv = [(i1,j1) | i1 <- (oneAboveBelow i $ height grid),
+                          j1 <- (oneAboveBelow j $ width grid)]
+    in getUnopenedAdjCoords (deleteFirstFromList (i,j) conv) grid
+
+getUnopenedAdjCoords :: [Coord] -> ApparentGrid -> [Coord]
+getUnopenedAdjCoords [] _ = []
+getUnopenedAdjCoords (c:cs) grid
+    | c @!! grid == 9 = c:getUnopenedAdjCoords cs grid
+    | otherwise = getUnopenedAdjCoords cs grid
+
+openedAdjCoords :: ApparentGrid -> Coord -> [Coord]
+openedAdjCoords grid (i,j) = 
+    let conv = [(i1,j1) | i1 <- (oneAboveBelow i $ height grid),
+                          j1 <- (oneAboveBelow j $ width grid)]
+    in getOpenedAdjCoords (deleteFirstFromList (i,j) conv) grid
+
+getOpenedAdjCoords :: [Coord] -> ApparentGrid -> [Coord]
+getOpenedAdjCoords [] _ = []
+getOpenedAdjCoords (c:cs) grid
+    | c @!! grid /= 9 && c @!! grid /= 10 = c:getOpenedAdjCoords cs grid
+    | otherwise = getOpenedAdjCoords cs grid
+
+sumOfUnopened :: [Coord] -> ApparentGrid -> Int
+sumOfUnopened [] grid = 0
+sumOfUnopened (c:cs) grid = 
+    case c @!! grid of
+        9 -> 1 + sumOfUnopened cs grid
+        -- 10 -> 1 + sumOfUnopened cs grid
+        _ -> sumOfUnopened cs grid
 
 numAdjFlags :: ApparentGrid -> Coord -> Int
 numAdjFlags grid (i,j) = 
@@ -176,9 +231,9 @@ openSquare apGrid acGrid c =
 
 updateOpenSquare :: ApparentGrid -> ActualGrid -> Coord -> Coord -> Int
 updateOpenSquare apGrid acGrid c opened
-    | c == opened && (c @!! apGrid == 10) = c @!! apGrid
-    | c == opened = c @!! acGrid
-    | otherwise = c @!! apGrid
+    | c == opened && (c @!! apGrid == 10) = c @!! apGrid -- if flagged, stay flagged
+    | c == opened = c @!! acGrid -- if not, show actual grid
+    | otherwise = c @!! apGrid -- else don't touch
 
 flagSquare :: ApparentGrid -> Coord -> ApparentGrid
 flagSquare apGrid c =
@@ -186,6 +241,12 @@ flagSquare apGrid c =
         w = width apGrid
     in [[ updateFlagSquare apGrid (i,j) c | j <- [0..(w-1)]]
                                           | i <- [0..(h-1)]]
+
+flagMultiple :: ApparentGrid -> [Coord] -> ApparentGrid
+flagMultiple apGrid [] = apGrid
+flagMultiple apGrid (c:cs) = 
+    let newGrid = flagSquare apGrid c
+    in flagMultiple newGrid cs
 
 flagAllUnmarked :: ApparentGrid -> ApparentGrid
 flagAllUnmarked apGrid = 

@@ -6,16 +6,23 @@ import Data.Time.Clock.POSIX
 import Reactive.Threepenny
 import System.Random
 import Minesweeper
+import AIPlayer
 import Data.Time
 -- import System.Locale
 import Control.Applicative
+import Data.Matrix
+-- import Math.LinearEquationSolver
 
 import Data.IORef
 import Control.Monad.Trans (liftIO)
 
 -- TODO
 
--- if win and unmarked square --> flag the square
+-- reveal mines on loss
+
+-- next level of non obvious moves - multisquare matrices
+-- if grid == grid after obvious moves then try non obvious
+-- firtly have to find area to analyse - borders of opened squares?
 
 -- Select difficulty levels
 --      #mines, board size 
@@ -57,7 +64,8 @@ setup (apparentGrid, actualGrid, g1) window = do
 
 
     -- TODO: set width and height based on size of grid
-    -- display <- UI.span # set text "empty" -- testing purposes
+    display <- UI.span # set text "empty" -- testing purposes
+    d2 <- UI.span # set text "empty"
     mineCountDisp <- UI.span # set text ("Mines: " ++ show (getNumMines actualGrid))
     canvas <- UI.canvas 
         # set UI.width 600 
@@ -67,6 +75,8 @@ setup (apparentGrid, actualGrid, g1) window = do
     -- openMode <- UI.button #+ [string "Open"]
     -- markMode <- UI.button #+ [string "Mark"]
     newGame <- UI.button #+ [string "New Board"]
+    makeMove <- UI.button #+ [string "Make Move"]
+    makeNonObvs <- UI.button #+ [string "Make Non-Obvious Move"]
 
     -- drawGame (concat (replicate 10 (replicate 10 0))) 10 10 canvas 0
     ag <- liftIO $ readIORef apGridRef
@@ -74,9 +84,11 @@ setup (apparentGrid, actualGrid, g1) window = do
 
     getBody window #+
         [ column [element canvas]
-        , element newGame]
+        , element newGame, element makeMove, element makeNonObvs]
 
-    getBody window #+ [row [element mineCountDisp]]
+    getBody window #+ [row [element mineCountDisp],
+                        row [element display],
+                        row [element d2]]
 
     runFunction setNoContextMenu -- turns off context menu on right click
 
@@ -94,7 +106,27 @@ setup (apparentGrid, actualGrid, g1) window = do
         let numMines = getNumMines newAcGrid
         element mineCountDisp # set UI.text ("Mines: " ++ show (numMines-numFlagged))
 
-        liftIO $ writeIORef gameStatusRef "Playing"
+        liftIO $ writeIORef gameStatusRef "P"
+
+    on UI.click makeMove $ \_ -> do
+        apGrid <- liftIO $ readIORef apGridRef
+        acGrid <- liftIO $ readIORef acGridRef
+        let newGrid = aiMove apGrid acGrid
+        updateNumMines newGrid acGrid mineCountDisp
+        liftIO $ writeIORef apGridRef newGrid
+
+        endGame newGrid acGrid canvas gameStatusRef mineCountDisp
+
+    on UI.click makeNonObvs $ \_ -> do
+        apGrid <- liftIO $ readIORef apGridRef
+        acGrid <- liftIO $ readIORef acGridRef
+        let (newGrid, ref) = aiNonObviousMove apGrid acGrid
+        updateNumMines newGrid acGrid mineCountDisp
+        liftIO $ writeIORef apGridRef newGrid
+
+        element display # set UI.text (show ref)
+
+        endGame newGrid acGrid canvas gameStatusRef mineCountDisp
 
 
     on UI.mousemove canvas $ \xy ->
@@ -105,7 +137,7 @@ setup (apparentGrid, actualGrid, g1) window = do
         if state == "W" || state == "L" then do
             return ()
             else do
-                let coord = convCoord xy
+                let coord = convCoord xy 9 9
                 apGrid <- liftIO $ readIORef apGridRef
                 acGrid <- liftIO $ readIORef acGridRef
                 let newGrid = handleInput2 apGrid acGrid coord "F"
@@ -121,24 +153,32 @@ setup (apparentGrid, actualGrid, g1) window = do
             return ()
             else do
                 xy <- liftIO $ readIORef mousePos
-                let coord = convCoord xy
+                let coord = convCoord xy 9 9
                 apGrid <- liftIO $ readIORef apGridRef
                 acGrid <- liftIO $ readIORef acGridRef
                 let newGrid = handleInput2 apGrid acGrid coord ""
                 liftIO $ writeIORef apGridRef newGrid
+
+                -- let (c,m) = markNonObvious newGrid
+                -- element display # set UI.text (show c)
+                -- element d2 # set UI.text (show m)
+                -- element d2 # set UI.text (show r)
                 
-                -- checkendgame and pass into drawGame
-                let status = checkEndgame newGrid acGrid
-                -- drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
-                if status == "W" then do
-                    let finishGrid = flagAllUnmarked newGrid
-                    drawGame (concat finishGrid) 9 9 canvas 0 status gameStatusRef
-                    updateNumMines finishGrid acGrid mineCountDisp
-                    else do 
-                        drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
-        -- check endgame
+                endGame newGrid acGrid canvas gameStatusRef mineCountDisp
 
     return ()
+
+
+endGame apGrid acGrid canvas gameStatusRef mineCountDisp = do
+    let status = checkEndgame apGrid acGrid
+    -- drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
+    if status == "W" then do
+        let finishGrid = flagAllUnmarked apGrid
+        drawGame (concat finishGrid) 9 9 canvas 0 status gameStatusRef
+        updateNumMines finishGrid acGrid mineCountDisp
+        else do 
+            drawGame (concat apGrid) 9 9 canvas 0 status gameStatusRef
+
 
 -- updateNumMines :: ApparentGrid -> ActualGrid -> 
 updateNumMines apGrid acGrid disp = do
@@ -147,11 +187,11 @@ updateNumMines apGrid acGrid disp = do
     element disp # set UI.text ("Mines: "++ show (numMines-numFlagged))
     return ()
 
-convCoord :: (Double, Double) -> (Int, Int)
-convCoord (col,row) = 
+convCoord :: (Double, Double) -> Int -> Int -> (Int, Int)
+convCoord (col,row) maxR maxC = 
     let x = floor $ row / (fromIntegral $ canvasHeight `div` 9)
         y = floor $ col / (fromIntegral $ canvasWidth `div` 9)
-    in (x,y)
+    in (min x (maxR-1) , min y (maxC-1))
 
 
 -- can calculate width and height from grid
@@ -217,6 +257,7 @@ drawSquare val h w canvas index = do
     canvas # set' UI.textFont "50px sans-serif"
     canvas # UI.fillText
         (spaceVal)
+        -- (show val)
         ( fromIntegral ((j * (canvasWidth `div` w) + 
             fromIntegral (canvasWidth `div` w ) `div` 2))
         , fromIntegral ((i * (canvasHeight `div` h) +
@@ -237,9 +278,15 @@ valOf v =
         6 -> ("6", "grey", "turquoise")
         7 -> ("7", "grey", "black")
         8 -> ("8", "grey", "silver")
-        9 -> ("", "white", "white")
+        9 -> ("", "white", "grey")
         _ -> (show v, "grey", "white")
 
 setNoContextMenu :: JSFunction ()
 setNoContextMenu = ffi "document.getElementById('canvas').setAttribute('oncontextmenu', 'return false;')"
 
+test = rref [[1,1,0,0,0,1]
+            ,[1,1,1,0,0,1]
+            ,[0,1,1,0,0,1]
+            ,[0,0,1,1,0,1]
+            ,[0,0,1,1,1,1]
+            ,[0,0,0,1,1,1]]
