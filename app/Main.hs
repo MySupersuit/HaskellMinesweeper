@@ -19,7 +19,8 @@ import Control.Monad.Trans (liftIO)
 -- Select difficulty levels
 --      #mines, board size 
 
--- better AI
+-- better AI - consolidate best move into one button 
+-- constant first move, other random move if 2 at start eg.
 
 -- setup
 canvasHeight :: Int
@@ -39,6 +40,7 @@ main = do
     
     -- StdGen initialised with time so different each time game is executed
     epoch_int <- (read <$> formatTime defaultTimeLocale "%s" <$> getCurrentTime) :: IO Int
+
     let boardstate = initGame epoch_int
     startGUI defaultConfig (setup boardstate)
 
@@ -56,6 +58,7 @@ setup (apparentGrid, actualGrid, g1) window = do
     -- TODO: set width and height based on size of grid
     display <- UI.span # set text "empty" -- testing purposes
     d2 <- UI.span # set text "empty"
+    d3 <- UI.span # set text "empty"
     mineCountDisp <- UI.span # set text ("Mines: " ++ show (getNumMines actualGrid))
     canvas <- UI.canvas 
         # set UI.width 600 
@@ -65,20 +68,23 @@ setup (apparentGrid, actualGrid, g1) window = do
     -- openMode <- UI.button #+ [string "Open"]
     -- markMode <- UI.button #+ [string "Mark"]
     newGame <- UI.button #+ [string "New Board"]
-    makeMove <- UI.button #+ [string "Make Move"]
+    makeMove <- UI.button #+ [string "Make Obvious Move"]
     makeNonObvs <- UI.button #+ [string "Make Non-Obvious Move"]
+    makeProbMove <- UI.button #+ [string "Guess Move"]
 
     -- drawGame (concat (replicate 10 (replicate 10 0))) 10 10 canvas 0
     ag <- liftIO $ readIORef apGridRef
-    drawGame (concat ag) 9 9 canvas 0 "P" gameStatusRef
+    -- drawGame (concat ag) 9 9 canvas 0 "P" gameStatusRef
+    drawGame (concat ag) 16 16 canvas 0 "P" gameStatusRef
 
     getBody window #+
         [ column [element canvas]
-        , element newGame, element makeMove, element makeNonObvs]
+        , element newGame, element makeMove, element makeNonObvs, element makeProbMove]
 
     getBody window #+ [row [element mineCountDisp],
                         row [element display],
-                        row [element d2]]
+                        row [element d2],
+                        row [element d3]]
 
     runFunction setNoContextMenu -- turns off context menu on right click
 
@@ -88,7 +94,8 @@ setup (apparentGrid, actualGrid, g1) window = do
         
         liftIO $ writeIORef genRef gen1
         let (newApGrid, newAcGrid, gen2) = initGame num
-        drawGame (concat newApGrid) 9 9 canvas 0 "P" gameStatusRef
+        -- drawGame (concat newApGrid) 9 9 canvas 0 "P" gameStatusRef
+        drawGame (concat newApGrid) 16 16 canvas 0 "P" gameStatusRef
         liftIO $ writeIORef apGridRef newApGrid
         liftIO $ writeIORef acGridRef newAcGrid
 
@@ -99,24 +106,55 @@ setup (apparentGrid, actualGrid, g1) window = do
         liftIO $ writeIORef gameStatusRef "P"
 
     on UI.click makeMove $ \_ -> do
-        apGrid <- liftIO $ readIORef apGridRef
-        acGrid <- liftIO $ readIORef acGridRef
-        let newGrid = aiMove apGrid acGrid
-        updateNumMines newGrid acGrid mineCountDisp
-        liftIO $ writeIORef apGridRef newGrid
+        state <- liftIO $ readIORef gameStatusRef
+        if state == "W" || state == "L" then do
+            return ()
+            else do
+                apGrid <- liftIO $ readIORef apGridRef
+                acGrid <- liftIO $ readIORef acGridRef
+                let numMines = getNumMines acGrid
+                let newGrid = aiMove apGrid acGrid numMines
+                updateNumMines newGrid acGrid mineCountDisp
+                liftIO $ writeIORef apGridRef newGrid
 
-        endGame newGrid acGrid canvas gameStatusRef mineCountDisp
+                endGame newGrid acGrid canvas gameStatusRef mineCountDisp
 
     on UI.click makeNonObvs $ \_ -> do
-        apGrid <- liftIO $ readIORef apGridRef
-        acGrid <- liftIO $ readIORef acGridRef
-        let (newGrid, ref) = aiNonObviousMove apGrid acGrid
-        updateNumMines newGrid acGrid mineCountDisp
-        liftIO $ writeIORef apGridRef newGrid
+        state <- liftIO $ readIORef gameStatusRef
+        if state == "W" || state == "L" then do
+            return ()
+            else do
+                apGrid <- liftIO $ readIORef apGridRef
+                acGrid <- liftIO $ readIORef acGridRef
+                -- let (newGrid, ref) = aiNonObviousMove apGrid acGrid
+                let (newGrid, ref, toFlag, toOpen) = aiNonObviousMove apGrid acGrid
+                updateNumMines newGrid acGrid mineCountDisp
+                liftIO $ writeIORef apGridRef newGrid
 
-        element display # set UI.text (show ref)
+                element display # set UI.text (show toFlag)
+                element d2 # set UI.text (show toOpen)
+                element d3 # set UI.text (show ref)
 
-        endGame newGrid acGrid canvas gameStatusRef mineCountDisp
+                endGame newGrid acGrid canvas gameStatusRef mineCountDisp
+
+    on UI.click makeProbMove $ \_ -> do
+        state <- liftIO $ readIORef gameStatusRef
+        if state == "W" || state == "L" then do
+            return ()
+            else do
+                apGrid <- liftIO $ readIORef apGridRef
+                acGrid <- liftIO $ readIORef acGridRef
+                let numMines = getNumMines acGrid
+                -- let (newGrid, probs, coord, boardP) = naiveProb apGrid acGrid numMines
+                let newGrid = probMove apGrid acGrid numMines
+                updateNumMines newGrid acGrid mineCountDisp
+                liftIO $ writeIORef apGridRef newGrid
+
+                -- element display # set UI.text (show probs)
+                -- element d2 # set UI.text (show coord)
+                -- element d3 # set UI.text (show boardP)
+
+                endGame newGrid acGrid canvas gameStatusRef mineCountDisp
 
     on UI.mousemove canvas $ \xy ->
         do liftIO $ writeIORef mousePos xy
@@ -126,14 +164,16 @@ setup (apparentGrid, actualGrid, g1) window = do
         if state == "W" || state == "L" then do
             return ()
             else do
-                let coord = convCoord xy 9 9
+                -- let coord = convCoord xy 9 9
+                let coord = convCoord xy 16 16
                 apGrid <- liftIO $ readIORef apGridRef
                 acGrid <- liftIO $ readIORef acGridRef
                 let newGrid = handleInput2 apGrid acGrid coord "F"
                 updateNumMines newGrid acGrid mineCountDisp
 
                 liftIO $ writeIORef apGridRef newGrid
-                drawGame (concat newGrid) 9 9 canvas 0 "P" gameStatusRef
+                -- drawGame (concat newGrid) 9 9 canvas 0 "P" gameStatusRef
+                drawGame (concat newGrid) 16 16 canvas 0 "P" gameStatusRef
 
 
     on UI.click canvas $ \_ -> do
@@ -142,7 +182,8 @@ setup (apparentGrid, actualGrid, g1) window = do
             return ()
             else do
                 xy <- liftIO $ readIORef mousePos
-                let coord = convCoord xy 9 9
+                -- let coord = convCoord xy 9 9
+                let coord = convCoord xy 16 16
                 apGrid <- liftIO $ readIORef apGridRef
                 acGrid <- liftIO $ readIORef acGridRef
                 let newGrid = handleInput2 apGrid acGrid coord ""
@@ -158,14 +199,19 @@ endGame apGrid acGrid canvas gameStatusRef mineCountDisp = do
     -- drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
     if status == "W" then do
         let finishGrid = flagAllUnmarked apGrid
-        drawGame (concat finishGrid) 9 9 canvas 0 status gameStatusRef
+        -- drawGame (concat finishGrid) 9 9 canvas 0 status gameStatusRef
+        drawGame (concat finishGrid) 16 16 canvas 0 status gameStatusRef
+        liftIO $ writeIORef gameStatusRef "W"
         updateNumMines finishGrid acGrid mineCountDisp
         else do 
             if status == "L" then do
                 let newGrid = revealMines apGrid acGrid
-                drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
+                liftIO $ writeIORef gameStatusRef "L"
+                -- drawGame (concat newGrid) 9 9 canvas 0 status gameStatusRef
+                drawGame (concat newGrid) 16 16 canvas 0 status gameStatusRef
                 else do
-                    drawGame (concat apGrid) 9 9 canvas 0 status gameStatusRef
+                    -- drawGame (concat apGrid) 9 9 canvas 0 status gameStatusRef
+                    drawGame (concat apGrid) 16 16 canvas 0 status gameStatusRef
 
 revealMines :: ApparentGrid -> ActualGrid -> ApparentGrid
 revealMines apGrid acGrid =
@@ -181,8 +227,10 @@ updateNumMines apGrid acGrid disp = do
 
 convCoord :: (Double, Double) -> Int -> Int -> (Int, Int)
 convCoord (col,row) maxR maxC = 
-    let x = floor $ row / (fromIntegral $ canvasHeight `div` 9)
-        y = floor $ col / (fromIntegral $ canvasWidth `div` 9)
+    -- let x = floor $ row / (fromIntegral $ canvasHeight `div` 9)
+        -- y = floor $ col / (fromIntegral $ canvasWidth `div` 9)
+    let x = floor $ row / (fromIntegral $ canvasHeight `div` 16)
+        y = floor $ col / (fromIntegral $ canvasWidth `div` 16)
     in (min x (maxR-1) , min y (maxC-1))
 
 
@@ -219,6 +267,7 @@ drawWin canvas = do
     canvas # set' UI.fillStyle (UI.htmlColor "lime")
     canvas # set' UI.textAlign (UI.Center)
     canvas # set' UI.textFont "100px sans-serif"
+
     canvas # UI.fillText
         ("You won!")
         (fromIntegral $ canvasWidth `div` 2, 
@@ -247,7 +296,7 @@ drawSquare val h w canvas index = do
         (fromIntegral (canvasHeight `div` h - 6))
     canvas # set' UI.fillStyle (UI.htmlColor numColour)
     canvas # set' UI.textAlign (UI.Center)
-    canvas # set' UI.textFont "50px sans-serif"
+    canvas # set' UI.textFont "25px sans-serif"
     canvas # UI.fillText
         (spaceVal)
         -- (show val)

@@ -7,9 +7,11 @@ module Minesweeper
     , checkEndgame
     , getNumFlags
     , getNumMines
+    , getNumUnopened
     , flagAllUnmarked
     , getNumUnopenedAdj
     , unopenedAdjCoords
+    , getOpenedAdjCoords
     , flagMultiple
     , height
     , width
@@ -318,7 +320,7 @@ handleInput2 apGrid acGrid coord instr = do
             if coord @!! acGrid == (-1) then
                 openSquare apGrid acGrid coord
             else 
-                if (numAdjFlags apGrid coord) == (numAdjMines acGrid coord) then
+                if (coord @!! acGrid == 0 || coord @!! apGrid /= 9) && (numAdjFlags apGrid coord) == (numAdjMines acGrid coord) then
                     openZero apGrid acGrid coord
                 else
                     openSquare apGrid acGrid coord
@@ -419,6 +421,12 @@ getNumFlags grid =
     let cat = concat grid
     in length $ filter (==10) cat
 
+getNumUnopened :: ApparentGrid -> Int
+getNumUnopened grid = 
+    let cat = concat grid
+    in length $ filter (==9) cat
+
+
 -- from webpage -> send coordinates which are input coordinates
 -- left click = uncover
 -- right click = flag
@@ -426,10 +434,16 @@ getNumFlags grid =
 
 initGame :: Int -> (ApparentGrid, ActualGrid, StdGen)
 initGame g = do
-    -- let (mineCoords,g) = randomCoords [] 9 9 10 (mkStdGen time)
-    let (mineCoords,g1) = randomCoords [] 9 9 10 (mkStdGen g)
-    let actualGrid = insertAdjMines $ createActualBoard mineCoords 9 9
-    let appGrid = createApparentBoard 9 9
+    -- 9 x 9
+    -- let (mineCoords,g1) = randomCoords [] 9 9 10 (mkStdGen g)
+    -- let actualGrid = insertAdjMines $ createActualBoard mineCoords 9 9
+    -- let appGrid = createApparentBoard 9 9
+    -- (appGrid, actualGrid, g1)
+
+    -- 16x16
+    let (mineCoords,g1) = randomCoords [] 16 16 40 (mkStdGen g)
+    let actualGrid = insertAdjMines $ createActualBoard mineCoords 16 16
+    let appGrid = createApparentBoard 16 16
     (appGrid, actualGrid, g1)
 
 
