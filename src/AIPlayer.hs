@@ -1,6 +1,6 @@
 module AIPlayer 
     ( markObviousMines
-    , aiMove
+    , aiObviousMove
     , markNonObvious
     , rref
     , aiNonObviousMove
@@ -10,8 +10,8 @@ where
 import Minesweeper
 import qualified Data.List as L
 
-aiMove :: ApparentGrid -> ActualGrid -> Int -> ApparentGrid
-aiMove apGrid acGrid numMines = do
+aiObviousMove :: ApparentGrid -> ActualGrid -> Int -> ApparentGrid
+aiObviousMove apGrid acGrid numMines = do
     let marked = markObviousMines apGrid
     let newGrid = openObviousSpaces marked acGrid numMines
     newGrid
@@ -28,15 +28,12 @@ aiNonObviousMove apGrid acGrid = do
     marked
     -- (apGrid, marked)
 
--- for each square, if opened -> if #unopened adj == num mines adjacent then flag all
--- shoudl return coord + instruction rather than new board?
-
 markObviousMines :: ApparentGrid -> ApparentGrid
 markObviousMines grid =
     let h = height grid
         w = width grid
-        allCoords = [(i,j) | i <- [0..(w-1)],
-                             j <- [0..(h-1)]]
+        allCoords = [(i,j) | i <- [0..(h-1)],
+                             j <- [0..(w-1)]]
     in markObvious grid allCoords 
 
 markObvious :: ApparentGrid -> [Coord] -> ApparentGrid
@@ -46,23 +43,24 @@ markObvious grid (c:cs)
     | c @!! grid == 10 = markObvious grid cs 
     | c @!! grid == 0 = markObvious grid cs 
     | otherwise = do
-        let unopened = getNumUnopenedAdj grid c
+        -- let unopened = getNumUnopenedAdj grid c
+        let unopened = length $ unopenedAdjCoords grid c
         if unopened == 0 then do markObvious grid cs
             else do
                 let numMines = c @!! grid
                 let numFlags = numAdjFlags grid c
                 -- if numMines == unopened && numMines > numFlags then
-                if numFlags < c @!! grid && numMines-numFlags == unopened then
+                if numFlags < numMines && numMines-numFlags == unopened then
                     flagMultiple grid (unopenedAdjCoords grid c)
                     else
                         markObvious grid cs
 
 openObviousSpaces :: ApparentGrid -> ActualGrid -> Int -> ApparentGrid
-openObviousSpaces apGrid acGrid numMines=
+openObviousSpaces apGrid acGrid numMines =
     let h = height apGrid
         w = width apGrid
-        allCoords = [(i,j) | i <- [0..(w-1)],
-                             j <- [0..(h-1)]]
+        allCoords = [(i,j) | i <- [0..(h-1)],
+                             j <- [0..(w-1)]]
     in openObvious apGrid acGrid allCoords numMines
 
 openObvious :: ApparentGrid -> ActualGrid -> [Coord] -> Int -> ApparentGrid
@@ -77,7 +75,8 @@ openObvious apGrid acGrid (c:cs) numMines
     | c @!! apGrid == 10 = openObvious apGrid acGrid cs numMines
     | c @!! apGrid == 0 = openObvious apGrid acGrid cs numMines
     | otherwise = do
-        let unopened = getNumUnopenedAdj apGrid c
+        -- let unopened = getNumUnopenedAdj apGrid c
+        let unopened = length $ unopenedAdjCoords apGrid c
         if unopened == 0 then do openObvious apGrid acGrid cs numMines
             else do
                 let numFlags = numAdjFlags apGrid c
@@ -94,8 +93,8 @@ markNonObvious :: ApparentGrid -> ActualGrid -> (ApparentGrid,[[Float]], [Coord]
 markNonObvious apGrid acGrid = do
     let h = height apGrid
     let w = width apGrid
-    let allCoords = [(i,j) | i <- [0..(w-1)],
-                             j <- [0..(h-1)]]
+    let allCoords = [(i,j) | i <- [0..(h-1)],
+                             j <- [0..(w-1)]]
     
     let borderUn = L.nub $ getBorderUnopened apGrid allCoords
     let borderOp = L.nub $ getBorderOpened apGrid allCoords
@@ -139,11 +138,8 @@ getMaxMinBounds ref =
         l2 = (-1) * (length (filter (==(-1.0)) ref))
     in (l1, l2)
 
--- new_rrefToMove :: [[Float]] -> [([Int], Float)]
 new_rrefToMove :: [[Float]] -> ([Int], [Int])
--- new_rrefToMove :: [[Float]] -> (Int, Int)
 new_rrefToMove [] = ([],[])
--- new_rrefToMove [] = (-1,-1)
 new_rrefToMove (r:ef) = do
     let row = init r
     let (max, min) = getMaxMinBounds $ row
@@ -177,16 +173,6 @@ indicesOfAcc elem (x:xs) i
     | elem == x = i : indicesOfAcc elem xs (i+1)
     | otherwise = indicesOfAcc elem xs (i+1) 
 
--- indexOf :: Float -> [Float] -> Int
--- indexOf elem list = indexOfAcc elem list 0
-
--- indexOfAcc :: Float -> [Float] -> Int -> Int
--- indexOfAcc _ [] _ = -1
--- indexOfAcc elem (x:xs) acc
---     | elem == x = acc
---     | otherwise = indexOfAcc elem xs (acc+1)
-
-
 getBorderOpened :: ApparentGrid -> [Coord] -> [Coord]
 getBorderOpened grid [] = []
 getBorderOpened grid (c:cs)
@@ -200,16 +186,7 @@ getBorderUnopened grid (c:cs)
     | openedAdjCoords grid c == [] = getBorderUnopened grid cs
     | c @!! grid == 9 && openedAdjCoords grid c /= [] = c : getBorderUnopened grid cs
     | otherwise = getBorderUnopened grid cs
-    
--- getBorderOpened :: ApparentGrid -> [Coord] -> [Coord]
--- getBorderOpened grid [] = []
--- getBorderOpened grid (c:cs)
---     | un
 
--- solve system of equations using cramers rule or something?
--- look at matrix package
-
--- opened
 listBs :: [Coord] -> ApparentGrid -> [Int]
 listBs [] grid = []
 listBs (o:op) grid = y1 : listBs op grid
@@ -266,6 +243,28 @@ replace :: Int -> a -> [a] -> [a]
 replace n e l = a ++ e : b
   where (a, _ : b) = splitAt n l
 
+-- enumerate :: ApparentGrid -> Int -> [ApparentGrid]
+-- enumerate :: ApparentGrid -> Int -> Int
+-- enumerate apGrid numMines = do
+--     let h = height apGrid
+--     let w = width apGrid
+--     let allCoords = [(i,j) | i <- [0..(h-1)],
+--                              j <- [0..(w-1)]]
+
+--     let borderUn = L.nub $ getBorderUnopened apGrid allCoords
+--     let borderOp = L.nub $ getBorderOpened apGrid allCoords
+--     let lenUn = length borderUn
+--     if numMines < lenUn then do
+--         let numPoss = lenUn `choose` numMines
+--         numPoss
+--         else do
+--             let numPoss = 2 ^ lenUn
+--             numPoss
+
+-- choose n 0 = 1
+-- choose 0 k = 0
+-- choose n k = choose (n-1) (k-1) * n `div` k 
+
 freshGrid [] = True
 freshGrid (c:cs) =
     case c of 
@@ -283,14 +282,14 @@ firstMove apGrid acGrid = do
     let midCoord = (h `div` 2, w `div` 2)
     let openGrid = openMultipleSquares apGrid acGrid [midCoord]
     let newGrid = checkZeros [midCoord] openGrid acGrid
-    newGrid
+    (newGrid, 0.0, (-1,-1))
 
 -- naiveProb :: ApparentGrid -> ActualGrid -> [Coord]
 naiveProb apGrid acGrid numMines = do
     let h = height apGrid
     let w = width apGrid
-    let allCoords = [(i,j) | i <- [0..(w-1)],
-                             j <- [0..(h-1)]]
+    let allCoords = [(i,j) | i <- [0..(h-1)],
+                             j <- [0..(w-1)]]
     
     let borderUn = L.nub $ getBorderUnopened apGrid allCoords
     let borderOp = L.nub $ getBorderOpened apGrid allCoords
@@ -303,26 +302,28 @@ naiveProb apGrid acGrid numMines = do
     let boardProb = getBoardProb apGrid numMines
     if boardProb < minProb then do
         let opened = getOpenedAdjCoords allCoords apGrid
-        let otherCoordToOpen = getCoordNotIn allCoords (borderUn++opened)
+        let flagged = getFlaggedCoords allCoords apGrid
+        let otherCoordToOpen = getCoordNotIn allCoords (borderUn++opened++flagged)
         let openGrid = openMultipleSquares apGrid acGrid [otherCoordToOpen]
         let newGrid = checkZeros [otherCoordToOpen] openGrid acGrid
-        newGrid
+        (newGrid, boardProb, otherCoordToOpen)
         else do
             let openGrid = openMultipleSquares apGrid acGrid [coordToOpen]
             let newGrid = checkZeros [coordToOpen] openGrid acGrid
             -- (newGrid, probs, coordToOpen, boardProb)
-            newGrid
+            (newGrid, minProb, coordToOpen)
 
 
 getCoordNotIn all coords = do
     let diff = all L.\\ coords
-    diff !! ((length diff) `div` 2)  
+    if diff == [] then head coords 
+        else diff !! ((length diff) `div` 2)  
 
 -- getProbs :: ApparentGrid -> [Coord] -> [Float]
 getProbs apGrid [] = []
 getProbs apGrid (c:cs) = do
     let op = openedAdjCoords apGrid c
-    let prob = calcProb apGrid op
+    let prob = calcProb apGrid op / (fromIntegral $ length op)
     prob : getProbs apGrid cs
 
 
@@ -333,8 +334,8 @@ calcProb :: ApparentGrid -> [Coord] -> Float
 calcProb _ [] = 0
 calcProb apGrid (c:cs) = do
     let adj = fromIntegral $ length $ unopenedAdjCoords apGrid c
-    let f = fromIntegral$ numAdjFlags apGrid c
+    let f = fromIntegral $ numAdjFlags apGrid c
     let m = fromIntegral $ c @!! apGrid
-    ((m - f) / adj) + (calcProb apGrid cs)
+    (((m - f) / adj) + (calcProb apGrid cs))
 
 getBoardProb apGrid numMines = (fromIntegral numMines) / fromIntegral (getNumUnopened apGrid)
