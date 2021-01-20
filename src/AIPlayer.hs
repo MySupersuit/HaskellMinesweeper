@@ -10,23 +10,21 @@ where
 import Minesweeper
 import qualified Data.List as L
 
+-- Make an obvious move
 aiObviousMove :: ApparentGrid -> ActualGrid -> Int -> ApparentGrid
 aiObviousMove apGrid acGrid numMines = do
     let marked = markObviousMines apGrid
     let newGrid = openObviousSpaces marked acGrid numMines
     newGrid
-    -- if newGrid == apGrid then do
-    --     markNonObvious apGrid acGrid
-    --     else do
-    --         newGrid
 
--- aiNonObviousMove :: ApparentGrid -> ActualGrid -> (ApparentGrid, [[Float]])
--- aiNonObviousMove :: ApparentGrid -> ActualGrid -> ([Coord], [Coord]) 
-
+-- Return a new grid and some information
+-- the rref matrix
+-- the coords to open
+-- the coords to flag
+aiNonObviousMove :: ApparentGrid -> ActualGrid -> (ApparentGrid,[[Float]], [Coord], [Coord])
 aiNonObviousMove apGrid acGrid = do
     let marked = markNonObvious apGrid acGrid
     marked
-    -- (apGrid, marked)
 
 markObviousMines :: ApparentGrid -> ApparentGrid
 markObviousMines grid =
@@ -85,10 +83,6 @@ openObvious apGrid acGrid (c:cs) numMines
                     else
                         openObvious apGrid acGrid cs numMines
 
-
--- markNonObvious :: ApparentGrid -> ActualGrid -> (ApparentGrid, [[Float]])
--- markNonObvious :: ApparentGrid -> ActualGrid -> [[Float]]
--- markNonObvious :: ApparentGrid -> ActualGrid -> ([Coord], [Coord])
 markNonObvious :: ApparentGrid -> ActualGrid -> (ApparentGrid,[[Float]], [Coord], [Coord])
 markNonObvious apGrid acGrid = do
     let h = height apGrid
@@ -96,12 +90,13 @@ markNonObvious apGrid acGrid = do
     let allCoords = [(i,j) | i <- [0..(h-1)],
                              j <- [0..(w-1)]]
     
+    -- gets unique list of frontier squares
     let borderUn = L.nub $ getBorderUnopened apGrid allCoords
     let borderOp = L.nub $ getBorderOpened apGrid allCoords
     -- (borderOp, borderUn)
     let ref = rref $ makeMatrix borderOp borderUn apGrid
 
-    let (mines, opens) = new_rrefToMove ref
+    let (mines, opens) = rrefToMove ref
     -- (ref, mines, opens)
     let toFlag = isToCoords mines borderUn
     let toOpen = isToCoords opens borderUn
@@ -138,9 +133,11 @@ getMaxMinBounds ref =
         l2 = (-1) * (length (filter (==(-1.0)) ref))
     in (l1, l2)
 
-new_rrefToMove :: [[Float]] -> ([Int], [Int])
-new_rrefToMove [] = ([],[])
-new_rrefToMove (r:ef) = do
+-- Take in a rref matrix
+-- and return coords to open/flag
+rrefToMove :: [[Float]] -> ([Int], [Int])
+rrefToMove [] = ([],[])
+rrefToMove (r:ef) = do
     let row = init r
     let (max, min) = getMaxMinBounds $ row
     -- (max,min)
@@ -156,14 +153,9 @@ new_rrefToMove (r:ef) = do
                 let open = indicesOf 1.0 row
                 (mines,open)
                 else do
-                    new_rrefToMove ef
+                    rrefToMove ef
 
-answerFound :: [Float] -> Bool
-answerFound row = 
-    let start = init row
-        len = length $ init start
-    in ((length $ filter (==0) start) == len) && ((length $ filter (==1) start) == 1)
-
+-- get the locations of a number in a list of numbers
 indicesOf :: Float -> [Float] -> [Int]
 indicesOf elem list = indicesOfAcc elem list 0
 
@@ -173,6 +165,7 @@ indicesOfAcc elem (x:xs) i
     | elem == x = i : indicesOfAcc elem xs (i+1)
     | otherwise = indicesOfAcc elem xs (i+1) 
 
+-- get the coords of the opened squares which border unopened squares
 getBorderOpened :: ApparentGrid -> [Coord] -> [Coord]
 getBorderOpened grid [] = []
 getBorderOpened grid (c:cs)
@@ -180,6 +173,7 @@ getBorderOpened grid (c:cs)
     | c @!! grid > 0 && c @!! grid < 9 && unopenedAdjCoords grid c /= [] = c : getBorderOpened grid cs
     | otherwise = getBorderOpened grid cs
 
+-- get the coords of unopened squares which border opened squares
 getBorderUnopened :: ApparentGrid -> [Coord] -> [Coord]
 getBorderUnopened grid [] = []
 getBorderUnopened grid (c:cs)
@@ -187,17 +181,15 @@ getBorderUnopened grid (c:cs)
     | c @!! grid == 9 && openedAdjCoords grid c /= [] = c : getBorderUnopened grid cs
     | otherwise = getBorderUnopened grid cs
 
-listBs :: [Coord] -> ApparentGrid -> [Int]
-listBs [] grid = []
-listBs (o:op) grid = y1 : listBs op grid
-    where y1 = o @!! grid - numAdjFlags grid o 
-
+-- if coord in list then add 1 to list, else add 0
+-- Used in making the equations for the matrix
 toOneZeroRowVect :: [Coord] -> [Coord] -> [Float]
 toOneZeroRowVect [] cs = []
 toOneZeroRowVect (u:un) cs 
     | u `elem` cs = 1.0 : toOneZeroRowVect un cs
     | otherwise = 0.0 : toOneZeroRowVect un cs
 
+-- constructing the equations for the augmented matrix
 makeMatrix :: [Coord] -> [Coord] -> ApparentGrid -> [[Float]]
 makeMatrix [] _ _ = []
 makeMatrix (o:op) unopened grid = do
@@ -207,7 +199,6 @@ makeMatrix (o:op) unopened grid = do
     let u = unopenedAdjCoords grid o
     let rhs = toOneZeroRowVect unopened u
     (rhs ++ [b1]) : makeMatrix op unopened grid
-    -- rhs : makeMatrix op unopened grid
 
 
 -- convert matrix into reduced row echelon form
@@ -238,6 +229,7 @@ rref m = f m 0 [0 .. rows - 1]
                     | otherwise = zipWith h newRow row
                   where h = subtract . (* row !! lead')
 
+-- for rref
 replace :: Int -> a -> [a] -> [a]
 {- Replaces the element at the given index. -}
 replace n e l = a ++ e : b
@@ -265,17 +257,25 @@ replace n e l = a ++ e : b
 -- choose 0 k = 0
 -- choose n k = choose (n-1) (k-1) * n `div` k 
 
+-- checks whether board is all unopened
+freshGrid :: [Int] -> Bool
 freshGrid [] = True
 freshGrid (c:cs) =
     case c of 
         9 -> freshGrid cs
         _ -> False 
 
+-- generate move
+-- if freshgrid do the same starting move
+-- if not then calculate probability 
+probMove :: ApparentGrid -> ActualGrid -> Int -> (ApparentGrid, Float, Coord)
 probMove apGrid acGrid numMines =
     case freshGrid (concat apGrid) of
         True -> firstMove apGrid acGrid
         False -> naiveProb apGrid acGrid numMines
 
+-- first move then choose the mid coordinate
+firstMove :: ApparentGrid -> ActualGrid -> (ApparentGrid, Float, Coord)
 firstMove apGrid acGrid = do
     let h = height apGrid
     let w = width apGrid
@@ -284,7 +284,8 @@ firstMove apGrid acGrid = do
     let newGrid = checkZeros [midCoord] openGrid acGrid
     (newGrid, 0.0, (-1,-1))
 
--- naiveProb :: ApparentGrid -> ActualGrid -> [Coord]
+-- open coord with lowest prob of being a mine
+naiveProb :: ApparentGrid -> ActualGrid -> Int -> (ApparentGrid, Float, Coord)
 naiveProb apGrid acGrid numMines = do
     let h = height apGrid
     let w = width apGrid
@@ -301,6 +302,9 @@ naiveProb apGrid acGrid numMines = do
  
     let boardProb = getBoardProb apGrid numMines
     if boardProb < minProb then do
+        -- if rest of the board has lower prob than
+        -- squares adjacent to open squares
+        -- then pick a square not adjacent to any open square
         let opened = getOpenedAdjCoords allCoords apGrid
         let flagged = getFlaggedCoords allCoords apGrid
         let otherCoordToOpen = getCoordNotIn allCoords (borderUn++opened++flagged)
@@ -310,22 +314,22 @@ naiveProb apGrid acGrid numMines = do
         else do
             let openGrid = openMultipleSquares apGrid acGrid [coordToOpen]
             let newGrid = checkZeros [coordToOpen] openGrid acGrid
-            -- (newGrid, probs, coordToOpen, boardProb)
             (newGrid, minProb, coordToOpen)
 
-
+-- pick coord from list which is not in a given list
+getCoordNotIn :: [Coord] -> [Coord] -> Coord
 getCoordNotIn all coords = do
     let diff = all L.\\ coords
     if diff == [] then head coords 
         else diff !! ((length diff) `div` 2)  
 
--- getProbs :: ApparentGrid -> [Coord] -> [Float]
+-- generate list of probs given grid and list of coords
+getProbs :: ApparentGrid -> [Coord] -> [Float]
 getProbs apGrid [] = []
 getProbs apGrid (c:cs) = do
     let op = openedAdjCoords apGrid c
     let prob = calcProb apGrid op / (fromIntegral $ length op)
     prob : getProbs apGrid cs
-
 
 mean :: [Float] -> Float
 mean lst = (sum lst) / (fromIntegral $ length lst)
@@ -338,4 +342,6 @@ calcProb apGrid (c:cs) = do
     let m = fromIntegral $ c @!! apGrid
     (((m - f) / adj) + (calcProb apGrid cs))
 
+-- get probability of entire board
+getBoardProb :: ApparentGrid -> Int -> Float
 getBoardProb apGrid numMines = (fromIntegral numMines) / fromIntegral (getNumUnopened apGrid)
