@@ -6,4 +6,4 @@ minesweeper.hs has the game logic
 
 AIPlayer.hs has the AI logic
 
-Explainer document in the repo as doc.pdf
+Explainer document in the repo as Minesweeper.pdf
